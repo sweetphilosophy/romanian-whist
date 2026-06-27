@@ -2,6 +2,9 @@
   "name": "romanian-whist",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "next build",
