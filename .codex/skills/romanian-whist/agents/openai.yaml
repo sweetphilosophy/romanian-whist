@@ -1,0 +1,4 @@
+interface:
+  display_name: "Romanian Whist"
+  short_description: "Work safely in the local Romanian Whist app"
+  default_prompt: "Use $romanian-whist to make a gameplay or UI change in this project."

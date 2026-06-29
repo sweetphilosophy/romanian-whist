@@ -1,6 +1,6 @@
 "use client";
 
-import { CSSProperties, FormEvent, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, Check, Copy, Crown, Languages, Play, RotateCcw, Users, X } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import clsx from "clsx";
@@ -14,6 +14,10 @@ const text = {
   ro: {
     title: "Whist Romanesc",
     subtitle: "Camera locala pentru 4 jucatori",
+    entryKicker: "Masa de sufragerie, reguli pe server",
+    entrySignal: "4 locuri / Wi-Fi local",
+    createHint: "Deschide masa si trimite codul camerei.",
+    joinHint: "Intra cu numele tau si codul primit.",
     name: "Numele tau",
     room: "Cod camera",
     create: "Creeaza camera",
@@ -32,6 +36,12 @@ const text = {
     playNow: "Joaca o carte",
     trick: "Mana",
     hand: "Cartile tale",
+    phase: "Faza",
+    phaseLobby: "Lobby",
+    phaseBidding: "Licitatia",
+    phasePlaying: "Joc",
+    phaseRoundEnd: "Scor",
+    phaseGameEnd: "Final",
     scoreboard: "Scor",
     history: "Istoric scor",
     nextRound: "Runda urmatoare",
@@ -57,11 +67,20 @@ const text = {
     close: "Inchide",
     noCards: "Fara carti",
     score: "Scor",
-    streak: "Serie"
+    streak: "Serie",
+    cardsShort: "Carti",
+    bidShort: "Lic",
+    wonShort: "Luat",
+    scoreShort: "Scor",
+    waitingTurn: "Urmareste masa"
   },
   en: {
     title: "Romanian Whist",
     subtitle: "Local room for 4 players",
+    entryKicker: "Living-room table, server-held rules",
+    entrySignal: "4 seats / local Wi-Fi",
+    createHint: "Open the table and share the room code.",
+    joinHint: "Enter your name and the code you were given.",
     name: "Your name",
     room: "Room code",
     create: "Create room",
@@ -80,6 +99,12 @@ const text = {
     playNow: "Play a card",
     trick: "Trick",
     hand: "Your hand",
+    phase: "Phase",
+    phaseLobby: "Lobby",
+    phaseBidding: "Bidding",
+    phasePlaying: "Playing",
+    phaseRoundEnd: "Score",
+    phaseGameEnd: "Final",
     scoreboard: "Score",
     history: "Score history",
     nextRound: "Next round",
@@ -105,7 +130,12 @@ const text = {
     close: "Close",
     noCards: "No cards",
     score: "Score",
-    streak: "Streak"
+    streak: "Streak",
+    cardsShort: "Cards",
+    bidShort: "Bid",
+    wonShort: "Won",
+    scoreShort: "Score",
+    waitingTurn: "Watch the table"
   }
 } satisfies Record<Lang, Record<string, string>>;
 
@@ -126,35 +156,44 @@ export default function Home() {
   const [lang, setLang] = useState<Lang>("ro");
   const [scoreOpen, setScoreOpen] = useState(false);
   const [revealedTrick, setRevealedTrick] = useState<TrickView | null>(null);
+  const lastCelebratedRoundRef = useRef<number | null>(null);
   const t = text[lang];
 
   useEffect(() => {
-    const storedName = window.localStorage.getItem("whist:name");
-    const storedLang = window.localStorage.getItem("whist:lang") as Lang | null;
-    if (storedName) setName(storedName);
+    const storedName = window.localStorage.getItem(storageKey("name"));
+    const storedLang = window.localStorage.getItem(storageKey("lang")) as Lang | null;
+    const soloSeat = soloSeatLabel();
+    if (storedName) {
+      setName(storedName);
+    } else if (soloSeat) {
+      const testName = `Seat ${soloSeat}`;
+      setName(testName);
+      window.localStorage.setItem(storageKey("name"), testName);
+    }
     if (storedLang === "ro" || storedLang === "en") setLang(storedLang);
 
-    if (!window.localStorage.getItem("whist:clientId")) {
-      window.localStorage.setItem("whist:clientId", makeClientId());
+    if (!window.localStorage.getItem(storageKey("clientId"))) {
+      window.localStorage.setItem(storageKey("clientId"), makeClientId());
     }
 
     socketSingleton = io();
     setSocket(socketSingleton);
     socketSingleton.on("connect", () => {
-      const savedRoomCode = window.localStorage.getItem("whist:roomCode");
-      const clientId = window.localStorage.getItem("whist:clientId");
+      const savedRoomCode = window.localStorage.getItem(storageKey("roomCode"));
+      const clientId = window.localStorage.getItem(storageKey("clientId"));
       if (!savedRoomCode || !clientId) return;
 
       socketSingleton?.emit(
-        "joinRoom",
+        "reconnectRoom",
         {
           roomCode: savedRoomCode,
-          name: window.localStorage.getItem("whist:name") || storedName || "",
+          name: window.localStorage.getItem(storageKey("name")) || storedName || "",
           clientId
         },
         (ack: Ack) => {
           if (!ack?.ok) {
-            window.localStorage.removeItem("whist:roomCode");
+            window.localStorage.removeItem(storageKey("roomCode"));
+            setRoomCode("");
             return;
           }
 
@@ -163,7 +202,14 @@ export default function Home() {
       );
     });
     socketSingleton.on("state", (nextState: PublicGameState | null) => {
-      if (nextState) setState(nextState);
+      if (nextState) {
+        setState(nextState);
+        return;
+      }
+
+      setState(null);
+      setRoomCode("");
+      window.localStorage.removeItem(storageKey("roomCode"));
     });
 
     return () => {
@@ -173,15 +219,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("whist:lang", lang);
+    window.localStorage.setItem(storageKey("lang"), lang);
   }, [lang]);
 
   useEffect(() => {
     if (!state?.lastCompletedTrick) return;
     setRevealedTrick(state.lastCompletedTrick);
+    haptic(state.lastCompletedTrick.winnerId === state.meId ? [18, 34, 26] : 10);
     const timer = window.setTimeout(() => setRevealedTrick(null), 1900);
     return () => window.clearTimeout(timer);
-  }, [state?.lastCompletedTrick?.id]);
+  }, [state?.lastCompletedTrick?.id, state?.meId]);
+
+  useEffect(() => {
+    const latest = state?.history.at(-1);
+    if (!latest || (state?.phase !== "roundEnd" && state?.phase !== "gameEnd")) return;
+    if (lastCelebratedRoundRef.current === latest.round) return;
+    lastCelebratedRoundRef.current = latest.round;
+
+    const myScore = latest.scores.find((score) => score.clientId === state.meId);
+    if (!myScore) return;
+    haptic(myScore.streakBonus !== 0 ? [18, 28, 18, 28, 30] : myScore.delta > 0 ? [14, 36, 20] : 18);
+  }, [state?.history, state?.meId, state?.phase]);
 
   const me = useMemo(() => state?.players.find((player) => player.clientId === state.meId) ?? null, [state]);
   const currentPlayer = useMemo(
@@ -194,26 +252,28 @@ export default function Home() {
   const send = (event: string, payload: Record<string, unknown>) => {
     if (!socket) return;
     setError("");
-    const clientId = window.localStorage.getItem("whist:clientId");
+    haptic(event === "playCard" ? 8 : event === "placeBid" ? 6 : 4);
+    const clientId = window.localStorage.getItem(storageKey("clientId"));
     socket.emit(event, { ...payload, clientId }, (ack: Ack) => {
       if (!ack?.ok) {
+        haptic([28, 24, 28]);
         setError(ack?.error || "Something went wrong.");
         return;
       }
       setRoomCode(ack.roomCode);
-      window.localStorage.setItem("whist:roomCode", ack.roomCode);
+      window.localStorage.setItem(storageKey("roomCode"), ack.roomCode);
     });
   };
 
   const createRoom = (event: FormEvent) => {
     event.preventDefault();
-    window.localStorage.setItem("whist:name", name.trim());
+    window.localStorage.setItem(storageKey("name"), name.trim());
     send("createRoom", { name });
   };
 
   const joinRoom = (event: FormEvent) => {
     event.preventDefault();
-    window.localStorage.setItem("whist:name", name.trim());
+    window.localStorage.setItem(storageKey("name"), name.trim());
     send("joinRoom", { roomCode, name });
   };
 
@@ -221,6 +281,7 @@ export default function Home() {
     if (!state?.code) return;
     const ok = await copyText(state.code);
     setCopied(ok);
+    if (ok) haptic(10);
     window.setTimeout(() => setCopied(false), 1200);
   };
 
@@ -236,8 +297,21 @@ export default function Home() {
         </section>
 
         <section className="entry-grid">
+          <div className="entry-showcase" aria-hidden="true">
+            <div className="entry-card-stack">
+              <img src="/cards/AH.svg" alt="" />
+              <img src="/cards/10S.svg" alt="" />
+              <img src="/cards/QD.svg" alt="" />
+            </div>
+            <div className="entry-signal">
+              <span>{t.entryKicker}</span>
+              <strong>{t.entrySignal}</strong>
+            </div>
+          </div>
+
           <form className="panel entry-card" onSubmit={createRoom}>
             <h2>{t.create}</h2>
+            <p>{t.createHint}</p>
             <Field label={t.name} value={name} onChange={setName} autoComplete="name" />
             <button className="primary" type="submit" disabled={!name.trim()}>
               <Play size={18} />
@@ -247,6 +321,7 @@ export default function Home() {
 
           <form className="panel entry-card" onSubmit={joinRoom}>
             <h2>{t.join}</h2>
+            <p>{t.joinHint}</p>
             <Field label={t.name} value={name} onChange={setName} autoComplete="name" />
             <Field label={t.room} value={roomCode} onChange={(value) => setRoomCode(value.toUpperCase())} />
             <button className="primary" type="submit" disabled={!name.trim() || roomCode.trim().length < 4}>
@@ -321,6 +396,7 @@ function GameHeader({
       </div>
 
       <div className="hud-strip">
+        <HudItem label={t.phase} value={phaseLabel(state.phase, lang)} />
         <HudItem label={t.round} value={`${state.roundIndex + 1}/${state.totalRounds}`} />
         <HudItem label={t.cards} value={String(state.handSize)} />
         <TrumpBadge trump={state.trump} lang={lang} />
@@ -358,6 +434,23 @@ function PlayTable({
   const positions = tablePositions(state.players, state.meId);
   const visiblePlays = revealedTrick?.plays ?? state.currentTrick;
   const winner = revealedTrick ? state.players.find((player) => player.clientId === revealedTrick.winnerId) : null;
+  const winnerPosition = winner
+    ? positions.find((item) => item.player.clientId === winner.clientId)?.position ?? "bottom"
+    : "bottom";
+  const tableCue =
+    state.phase === "playing"
+      ? currentPlayer?.clientId === state.meId
+        ? t.illegal
+        : t.waitingTurn
+      : state.phase === "bidding"
+        ? currentPlayer?.clientId === state.meId
+          ? t.exact
+          : t.waitingTurn
+        : state.phase === "roundEnd"
+          ? t.scoreboard
+          : state.phase === "gameEnd"
+            ? t.gameOver
+            : t.waiting;
   const turnLabel =
     state.phase === "gameEnd"
       ? t.gameOver
@@ -379,6 +472,7 @@ function PlayTable({
           active={state.currentTurnId === player.clientId}
           dealer={dealer?.clientId === player.clientId}
           me={player.clientId === state.meId}
+          dealing={state.phase === "bidding" && player.handCount > 0}
           lang={lang}
         />
       ))}
@@ -386,21 +480,40 @@ function PlayTable({
       <div className="felt">
         <div className="table-status">
           <span>{turnLabel}</span>
-          <strong>{state.phase === "playing" ? t.illegal : t.exact}</strong>
+          <strong>{tableCue}</strong>
         </div>
 
         <div className={clsx("trick-zone", revealedTrick && "trick-reveal")}>
           {visiblePlays.length === 0 ? <div className="table-empty">{t.trick}</div> : null}
           {visiblePlays.map((play) => {
             const position = positions.find((item) => item.player.clientId === play.playerId)?.position ?? "bottom";
+            const fly = flyFromPosition(position);
             return (
-              <div className={clsx("table-card", `trick-${position}`)} key={`${play.playerId}-${play.card.id}`}>
-                <img src={`/cards/${play.card.id}.svg`} alt={play.card.id} />
-                <span>{state.players.find((player) => player.clientId === play.playerId)?.name}</span>
+              <div
+                className={clsx(
+                  "table-card",
+                  `trick-${position}`,
+                  revealedTrick && `collect-${winnerPosition}`
+                )}
+                key={`${play.playerId}-${play.card.id}`}
+                style={
+                  {
+                    "--fly-x": fly.x,
+                    "--fly-y": fly.y,
+                    "--fly-rot": fly.rotate
+                  } as CSSProperties
+                }
+              >
+                <div className="table-card-inner">
+                  <img src={`/cards/${play.card.id}.svg`} alt={play.card.id} />
+                  <span>{state.players.find((player) => player.clientId === play.playerId)?.name}</span>
+                </div>
               </div>
             );
           })}
         </div>
+
+        <TableParticles active={Boolean(revealedTrick)} mine={winner?.clientId === state.meId} />
 
         {revealedTrick && winner ? (
           <div className={clsx("winner-flash", winner.clientId === state.meId && "mine")}>
@@ -436,6 +549,7 @@ function LobbyTable({
     <section className="lobby-stage">
       <div className="lobby-panel">
         <h2>{t.waiting}</h2>
+        <p>{t.roomHelp}</p>
         <div className="lobby-seats">
           {Array.from({ length: 4 }, (_, index) => {
             const player = state.players[index];
@@ -470,6 +584,7 @@ function SeatCard({
   active,
   dealer,
   me,
+  dealing,
   lang
 }: {
   player: PublicPlayer;
@@ -477,9 +592,12 @@ function SeatCard({
   active: boolean;
   dealer: boolean;
   me: boolean;
+  dealing: boolean;
   lang: Lang;
 }) {
   const t = text[lang];
+  const backCount = Math.min(player.handCount, 6);
+  const backMid = (backCount - 1) / 2;
   return (
     <div className={clsx("seat-card", `seat-${position}`, active && "active", !player.connected && "offline")}>
       <div>
@@ -492,12 +610,38 @@ function SeatCard({
           {player.connected ? t.connected : t.disconnected}
         </span>
       </div>
-      <div className="seat-stats">
-        <span>{player.handCount}</span>
-        <span>{player.bid ?? "-"}</span>
-        <span>{player.tricks}</span>
-        <strong>{player.score}</strong>
+      <div className="seat-stats" aria-label={`${player.name} ${t.scoreboard}`}>
+        <span data-label={t.cardsShort} title={t.cardsShort}>
+          {player.handCount}
+        </span>
+        <span data-label={t.bidShort} title={t.bidShort}>
+          {player.bid ?? "-"}
+        </span>
+        <span data-label={t.wonShort} title={t.wonShort}>
+          {player.tricks}
+        </span>
+        <strong data-label={t.scoreShort} title={t.scoreShort}>
+          {player.score}
+        </strong>
       </div>
+      {!me && backCount > 0 ? (
+        <div className={clsx("opponent-back-fan", dealing && "dealing")} aria-hidden="true">
+          {Array.from({ length: backCount }, (_, index) => (
+            <img
+              key={index}
+              src="/cards/BLUE_BACK.svg"
+              alt=""
+              style={
+                {
+                  "--back-index": index,
+                  "--back-mid": backMid,
+                  "--deal-delay": `${index * 34}ms`
+                } as CSSProperties
+              }
+            />
+          ))}
+        </div>
+      ) : null}
       {player.host ? <Crown className="seat-crown" size={15} /> : null}
     </div>
   );
@@ -516,7 +660,10 @@ function BidDock({
   const isMyTurn = state.currentTurnId === state.meId;
   return (
     <div className="bid-dock">
-      <span>{isMyTurn ? t.bidNow : t.bid}</span>
+      <span>
+        <strong>{isMyTurn ? t.bidNow : t.bid}</strong>
+        <small>{t.exact}</small>
+      </span>
       <div>
         {Array.from({ length: state.handSize + 1 }, (_, bid) => (
           <button
@@ -545,8 +692,9 @@ function RoundEndDock({
 }) {
   const t = text[lang];
   const latest = state.history.at(-1);
+  const celebratoryScores = latest?.scores.filter((score) => score.delta > 0 || score.streakBonus !== 0).slice(0, 4) ?? [];
   return (
-    <div className="round-dock">
+    <div className={clsx("round-dock", celebratoryScores.length > 0 && "score-celebrate")}>
       <strong>{state.phase === "gameEnd" ? t.gameOver : t.scoreboard}</strong>
       {latest ? (
         <div className="round-summary">
@@ -554,6 +702,15 @@ function RoundEndDock({
             <span key={score.clientId} className={clsx(score.delta >= 0 ? "positive" : "negative")}>
               {score.name}: {score.delta > 0 ? "+" : ""}
               {score.delta}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {celebratoryScores.length > 0 ? (
+        <div className="score-burst" aria-hidden="true">
+          {celebratoryScores.map((score) => (
+            <span key={score.clientId} className={clsx(score.streakBonus !== 0 && "streak-pop")}>
+              {score.name} +{score.delta}
             </span>
           ))}
         </div>
@@ -579,8 +736,15 @@ function HandFan({
 }) {
   const t = text[lang];
   const canPlay = state.phase === "playing" && state.currentTurnId === state.meId;
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const count = state.hand.length;
   const mid = (count - 1) / 2;
+
+  useEffect(() => {
+    if (selectedCardId && !state.hand.some((card) => card.id === selectedCardId)) {
+      setSelectedCardId(null);
+    }
+  }, [selectedCardId, state.hand]);
 
   return (
     <section className="hand-fan-area" aria-label={t.hand}>
@@ -593,7 +757,7 @@ function HandFan({
           const lift = canPlay && legal ? -30 : 0;
           return (
             <button
-              className={clsx("fan-card", canPlay && legal && "playable")}
+              className={clsx("fan-card", canPlay && legal && "playable", selectedCardId === card.id && "selected")}
               disabled={!canPlay || !legal}
               key={card.id}
               style={
@@ -601,9 +765,13 @@ function HandFan({
                   "--angle": `${angle}deg`,
                   "--x": `${x}px`,
                   "--lift": `${lift}px`,
+                  "--deal-delay": `${index * 42}ms`,
                   zIndex: index + 1
                 } as CSSProperties
               }
+              onPointerDown={() => setSelectedCardId(card.id)}
+              onFocus={() => setSelectedCardId(card.id)}
+              onBlur={() => setSelectedCardId(null)}
               onClick={() => send("playCard", { roomCode: state.code, cardId: card.id })}
               aria-label={card.id}
             >
@@ -613,6 +781,27 @@ function HandFan({
         })}
       </div>
     </section>
+  );
+}
+
+function TableParticles({ active, mine }: { active: boolean; mine: boolean }) {
+  if (!active) return null;
+
+  return (
+    <div className={clsx("table-particles", mine && "mine")} aria-hidden="true">
+      {Array.from({ length: 16 }, (_, index) => (
+        <span
+          key={index}
+          style={
+            {
+              "--particle-angle": `${index * 22.5}deg`,
+              "--particle-distance": `${42 + (index % 4) * 12}px`,
+              "--particle-delay": `${(index % 5) * 32}ms`
+            } as CSSProperties
+          }
+        />
+      ))}
+    </div>
   );
 }
 
@@ -716,6 +905,22 @@ function HudItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+function phaseLabel(phase: PublicGameState["phase"], lang: Lang) {
+  const t = text[lang];
+  switch (phase) {
+    case "lobby":
+      return t.phaseLobby;
+    case "bidding":
+      return t.phaseBidding;
+    case "playing":
+      return t.phasePlaying;
+    case "roundEnd":
+      return t.phaseRoundEnd;
+    case "gameEnd":
+      return t.phaseGameEnd;
+  }
+}
+
 function LanguagePicker({
   lang,
   setLang,
@@ -776,6 +981,39 @@ function makeClientId() {
   }
 
   return `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function storageKey(key: "name" | "lang" | "clientId" | "roomCode") {
+  if (typeof window === "undefined") return `whist:${key}`;
+
+  const seat = soloSeatLabel();
+  return seat ? `whist:seat:${seat}:${key}` : `whist:${key}`;
+}
+
+function soloSeatLabel() {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search);
+  const seat = params.get("seat") || params.get("Seat") || params.get("player") || params.get("Player") || "";
+  return seat.trim().slice(0, 12);
+}
+
+function flyFromPosition(position: "top" | "right" | "bottom" | "left") {
+  switch (position) {
+    case "top":
+      return { x: "0px", y: "-112px", rotate: "8deg" };
+    case "right":
+      return { x: "132px", y: "4px", rotate: "12deg" };
+    case "left":
+      return { x: "-132px", y: "4px", rotate: "-12deg" };
+    case "bottom":
+    default:
+      return { x: "0px", y: "150px", rotate: "-8deg" };
+  }
+}
+
+function haptic(pattern: number | number[]) {
+  if (typeof navigator === "undefined" || !("vibrate" in navigator)) return;
+  navigator.vibrate(pattern);
 }
 
 async function copyText(value: string) {

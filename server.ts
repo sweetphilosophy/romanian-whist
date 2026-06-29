@@ -12,6 +12,7 @@ import {
   handleJoin,
   handleNextRound,
   handlePlayCard,
+  handleReconnect,
   handleStartGame,
   publicStateFor
 } from "./src/server/game";
@@ -66,6 +67,12 @@ async function main() {
       if (result.ok) emitRoom(result.roomCode);
     });
 
+    socket.on("reconnectRoom", (payload, ack) => {
+      const result = handleReconnect(socket.id, payload);
+      ack?.(result);
+      if (result.ok) emitRoom(result.roomCode);
+    });
+
     socket.on("startGame", (payload, ack) => {
       const result = handleStartGame(socket.id, payload);
       ack?.(result);
@@ -91,8 +98,17 @@ async function main() {
     });
 
     socket.on("disconnect", () => {
-      const roomCode = handleDisconnect(socket.id);
-      if (roomCode) emitRoom(roomCode);
+      const result = handleDisconnect(socket.id);
+      if (!result) return;
+
+      if (result.closed) {
+        for (const socketId of result.socketIds) {
+          io.sockets.sockets.get(socketId)?.emit("state", null);
+        }
+        return;
+      }
+
+      emitRoom(result.roomCode);
     });
   });
 

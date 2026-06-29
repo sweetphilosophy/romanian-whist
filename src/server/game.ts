@@ -87,6 +87,10 @@ type Result =
   | { ok: true; roomCode: string }
   | { ok: false; error: string };
 
+type DisconnectResult =
+  | { roomCode: string; closed: false }
+  | { roomCode: string; closed: true; socketIds: string[] };
+
 const rooms = new Map<string, Room>();
 const socketToPlayer = new Map<string, { roomCode: string; clientId: string }>();
 
@@ -177,6 +181,23 @@ export function handleJoin(socketId: string, payload: { roomCode?: string; name?
     negativeStreak: 0
   });
 
+  socketToPlayer.set(socketId, { roomCode, clientId });
+  return { ok: true, roomCode };
+}
+
+export function handleReconnect(socketId: string, payload: { roomCode?: string; name?: string; clientId?: string }): Result {
+  const roomCode = String(payload.roomCode || "").trim().toUpperCase();
+  const room = rooms.get(roomCode);
+  if (!room) return fail("Room not found.");
+  if (room.phase === "lobby") return fail("Lobby rooms do not auto-reconnect.");
+
+  const clientId = cleanClientId(payload.clientId);
+  const existing = room.players.find((player) => player.clientId === clientId);
+  if (!existing) return fail("Player not found in that room.");
+
+  existing.socketId = socketId;
+  existing.connected = true;
+  existing.name = cleanName(payload.name || existing.name);
   socketToPlayer.set(socketId, { roomCode, clientId });
   return { ok: true, roomCode };
 }
@@ -304,15 +325,29 @@ export function handleNextRound(socketId: string, payload: { roomCode?: string }
   return { ok: true, roomCode: room.code };
 }
 
-export function handleDisconnect(socketId: string) {
+export function handleDisconnect(socketId: string): DisconnectResult | null {
   const location = socketToPlayer.get(socketId);
   if (!location) return null;
 
   const room = rooms.get(location.roomCode);
+  if (!room) {
+    socketToPlayer.delete(socketId);
+    return null;
+  }
+
+  if (room.phase === "lobby") {
+    const socketIds = room.players.map((candidate) => candidate.socketId);
+    for (const candidate of room.players) {
+      socketToPlayer.delete(candidate.socketId);
+    }
+    rooms.delete(room.code);
+    return { roomCode: room.code, closed: true, socketIds };
+  }
+
   const player = room?.players.find((candidate) => candidate.clientId === location.clientId);
   if (player) player.connected = false;
   socketToPlayer.delete(socketId);
-  return location.roomCode;
+  return { roomCode: location.roomCode, closed: false };
 }
 
 export function publicStateFor(roomCode: string, socketId: string) {
