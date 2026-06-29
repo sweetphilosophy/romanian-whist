@@ -472,12 +472,22 @@ function PlayTable({
           active={state.currentTurnId === player.clientId}
           dealer={dealer?.clientId === player.clientId}
           me={player.clientId === state.meId}
-          dealing={state.phase === "bidding" && player.handCount > 0}
           lang={lang}
         />
       ))}
 
-      <div className="felt">
+      <div className={clsx("felt", (state.phase === "roundEnd" || state.phase === "gameEnd") && "score-phase")}>
+        {positions.map(({ player, position }) =>
+          player.clientId === state.meId ? null : (
+            <TableHandFan
+              key={`${player.clientId}-fan`}
+              player={player}
+              position={position}
+              dealing={state.phase === "bidding" && player.handCount > 0}
+            />
+          )
+        )}
+
         <div className="table-status">
           <span>{turnLabel}</span>
           <strong>{tableCue}</strong>
@@ -584,7 +594,6 @@ function SeatCard({
   active,
   dealer,
   me,
-  dealing,
   lang
 }: {
   player: PublicPlayer;
@@ -592,12 +601,9 @@ function SeatCard({
   active: boolean;
   dealer: boolean;
   me: boolean;
-  dealing: boolean;
   lang: Lang;
 }) {
   const t = text[lang];
-  const backCount = Math.min(player.handCount, 6);
-  const backMid = (backCount - 1) / 2;
   return (
     <div className={clsx("seat-card", `seat-${position}`, active && "active", !player.connected && "offline")}>
       <div>
@@ -624,25 +630,40 @@ function SeatCard({
           {player.score}
         </strong>
       </div>
-      {!me && backCount > 0 ? (
-        <div className={clsx("opponent-back-fan", dealing && "dealing")} aria-hidden="true">
-          {Array.from({ length: backCount }, (_, index) => (
-            <img
-              key={index}
-              src="/cards/BLUE_BACK.svg"
-              alt=""
-              style={
-                {
-                  "--back-index": index,
-                  "--back-mid": backMid,
-                  "--deal-delay": `${index * 34}ms`
-                } as CSSProperties
-              }
-            />
-          ))}
-        </div>
-      ) : null}
       {player.host ? <Crown className="seat-crown" size={15} /> : null}
+    </div>
+  );
+}
+
+function TableHandFan({
+  player,
+  position,
+  dealing
+}: {
+  player: PublicPlayer;
+  position: "top" | "right" | "bottom" | "left";
+  dealing: boolean;
+}) {
+  const backCount = Math.min(player.handCount, 8);
+  const backMid = (backCount - 1) / 2;
+  if (backCount === 0) return null;
+
+  return (
+    <div className={clsx("table-hand-fan", `table-hand-${position}`, dealing && "dealing")} aria-hidden="true">
+      {Array.from({ length: backCount }, (_, index) => (
+        <img
+          key={index}
+          src="/cards/BLUE_BACK.svg"
+          alt=""
+          style={
+            {
+              "--fan-index": index,
+              "--fan-mid": backMid,
+              "--deal-delay": `${index * 34}ms`
+            } as CSSProperties
+          }
+        />
+      ))}
     </div>
   );
 }
@@ -753,7 +774,6 @@ function HandFan({
         {state.hand.map((card, index) => {
           const legal = state.legalCardIds.includes(card.id);
           const angle = Math.max(-30, Math.min(30, (index - mid) * 8));
-          const x = (index - mid) * Math.min(46, 260 / Math.max(count, 1));
           const lift = canPlay && legal ? -30 : 0;
           return (
             <button
@@ -763,10 +783,11 @@ function HandFan({
               style={
                 {
                   "--angle": `${angle}deg`,
-                  "--x": `${x}px`,
+                  "--fan-index": index,
+                  "--fan-mid": mid,
                   "--lift": `${lift}px`,
                   "--deal-delay": `${index * 42}ms`,
-                  zIndex: index + 1
+                  zIndex: canPlay && legal ? 100 + index : index + 1
                 } as CSSProperties
               }
               onPointerDown={() => setSelectedCardId(card.id)}

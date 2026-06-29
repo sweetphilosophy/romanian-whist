@@ -272,6 +272,10 @@ p {
   opacity: 0.45;
 }
 
+.fan-card:disabled {
+  pointer-events: none;
+}
+
 .compact {
   min-height: 38px;
   padding: 0 10px;
@@ -299,6 +303,7 @@ p {
 }
 
 .language select {
+  min-width: 2.7rem;
   color: var(--ink);
   background: transparent;
   border: 0;
@@ -307,6 +312,7 @@ p {
 
 .compact-language {
   min-height: 40px;
+  flex: 0 0 auto;
 }
 
 .table-shell {
@@ -479,7 +485,7 @@ p {
     inset 0 0 48px rgba(255, 255, 255, 0.06),
     inset 0 -34px 70px rgba(0, 0, 0, 0.18),
     0 22px 70px rgba(0, 0, 0, 0.3);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .felt::before {
@@ -503,6 +509,7 @@ p {
 
 .table-status {
   position: absolute;
+  z-index: 6;
   left: 50%;
   top: 12px;
   display: grid;
@@ -526,6 +533,10 @@ p {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 500;
+}
+
+.felt.score-phase .table-status {
+  display: none;
 }
 
 .seat-card {
@@ -654,33 +665,51 @@ p {
   color: var(--gold);
 }
 
-.opponent-back-fan {
+.table-hand-fan {
   position: absolute;
+  z-index: 5;
   left: 50%;
-  bottom: -23px;
-  width: 78px;
-  height: 34px;
-  transform: translateX(-50%);
+  top: 50%;
+  width: 1px;
+  height: 1px;
   pointer-events: none;
+  --table-fan-gap: clamp(14px, 2.5vw, 20px);
+  --table-fan-rotate: 0deg;
 }
 
-.opponent-back-fan img {
+.table-hand-fan img {
   position: absolute;
   left: 50%;
   bottom: 0;
-  width: 27px;
+  width: clamp(28px, 5.5vw, 42px);
   border-radius: 4px;
   box-shadow: 0 7px 14px rgba(0, 0, 0, 0.3);
   transform:
-    translateX(calc(-50% + (var(--back-index) - var(--back-mid)) * 11px))
-    rotate(calc((var(--back-index) - var(--back-mid)) * 9deg));
+    translateX(calc(-50% + (var(--fan-index) - var(--fan-mid)) * var(--table-fan-gap)))
+    rotate(calc(var(--table-fan-rotate) + (var(--fan-index) - var(--fan-mid)) * 8deg));
   transform-origin: 50% 120%;
-  animation: backFanIn 360ms ease both;
+  animation: tableFanIn 360ms ease both;
   animation-delay: var(--deal-delay);
 }
 
-.opponent-back-fan.dealing img {
-  animation-name: backDealIn;
+.table-hand-fan.dealing img {
+  animation-name: tableDealIn;
+}
+
+.table-hand-top {
+  top: -18px;
+  transform: translateX(-50%) rotate(180deg);
+}
+
+.table-hand-left {
+  left: -14px;
+  transform: translateY(-50%) rotate(90deg);
+}
+
+.table-hand-right {
+  left: auto;
+  right: -14px;
+  transform: translateY(-50%) rotate(-90deg);
 }
 
 .seat-bottom .seat-crown {
@@ -875,8 +904,9 @@ p {
 .round-dock {
   position: absolute;
   left: 50%;
+  top: auto;
   bottom: 16px;
-  z-index: 9;
+  z-index: 18;
   width: min(430px, 82vw);
   display: grid;
   gap: 8px;
@@ -977,14 +1007,14 @@ p {
   left: 0;
   right: 0;
   bottom: 0;
-  height: clamp(150px, 30svh, 250px);
+  height: clamp(170px, 31svh, 270px);
   pointer-events: none;
 }
 
 .hand-label {
   position: absolute;
   left: 50%;
-  bottom: clamp(116px, 20svh, 188px);
+  bottom: clamp(156px, 24svh, 218px);
   transform: translateX(-50%);
   color: var(--muted);
   font-size: 0.76rem;
@@ -994,10 +1024,11 @@ p {
 .hand-fan {
   position: absolute;
   left: 50%;
-  bottom: -74px;
+  bottom: 14px;
   width: 1px;
   height: clamp(170px, 34svh, 250px);
   pointer-events: none;
+  --hand-fan-gap: clamp(30px, 8vw, 54px);
 }
 
 .fan-card {
@@ -1009,7 +1040,10 @@ p {
   background: transparent;
   border: 0;
   border-radius: 8px;
-  transform: translateX(calc(-50% + var(--x))) translateY(var(--lift)) rotate(var(--angle));
+  transform:
+    translateX(calc(-50% + (var(--fan-index) - var(--fan-mid)) * var(--hand-fan-gap)))
+    translateY(var(--lift))
+    rotate(var(--angle));
   transform-origin: 50% 112%;
   transition:
     transform 170ms cubic-bezier(0.18, 0.9, 0.22, 1),
@@ -1026,6 +1060,7 @@ p {
   width: 100%;
   border-radius: 7px;
   box-shadow: var(--card-shadow);
+  pointer-events: none;
   transition:
     box-shadow 170ms ease,
     filter 170ms ease,
@@ -1042,7 +1077,7 @@ p {
 .fan-card.playable:focus-visible,
 .fan-card.selected {
   transform:
-    translateX(calc(-50% + var(--x)))
+    translateX(calc(-50% + (var(--fan-index) - var(--fan-mid)) * var(--hand-fan-gap)))
     translateY(calc(var(--lift) - 18px))
     rotate(calc(var(--angle) * 0.62))
     scale(1.04);
@@ -1060,7 +1095,7 @@ p {
 
 .fan-card.playable:active {
   transform:
-    translateX(calc(-50% + var(--x)))
+    translateX(calc(-50% + (var(--fan-index) - var(--fan-mid)) * var(--hand-fan-gap)))
     translateY(calc(var(--lift) - 28px))
     rotate(calc(var(--angle) * 0.46))
     scale(1.07);
@@ -1294,42 +1329,46 @@ p {
   }
   100% {
     opacity: 1;
-    transform: translateX(calc(-50% + var(--x))) translateY(var(--lift)) rotate(var(--angle)) scale(1);
+    transform:
+      translateX(calc(-50% + (var(--fan-index) - var(--fan-mid)) * var(--hand-fan-gap)))
+      translateY(var(--lift))
+      rotate(var(--angle))
+      scale(1);
   }
 }
 
-@keyframes backFanIn {
+@keyframes tableFanIn {
   from {
     opacity: 0;
     transform:
-      translateX(calc(-50% + (var(--back-index) - var(--back-mid)) * 6px))
+      translateX(calc(-50% + (var(--fan-index) - var(--fan-mid)) * 6px))
       translateY(8px)
-      rotate(0deg);
+      rotate(var(--table-fan-rotate));
   }
   to {
     opacity: 1;
     transform:
-      translateX(calc(-50% + (var(--back-index) - var(--back-mid)) * 11px))
+      translateX(calc(-50% + (var(--fan-index) - var(--fan-mid)) * var(--table-fan-gap)))
       translateY(0)
-      rotate(calc((var(--back-index) - var(--back-mid)) * 9deg));
+      rotate(calc(var(--table-fan-rotate) + (var(--fan-index) - var(--fan-mid)) * 8deg));
   }
 }
 
-@keyframes backDealIn {
+@keyframes tableDealIn {
   0% {
     opacity: 0;
     transform:
       translateX(-50%)
       translateY(-24px)
-      rotate(0deg)
+      rotate(var(--table-fan-rotate))
       scale(0.72);
   }
   100% {
     opacity: 1;
     transform:
-      translateX(calc(-50% + (var(--back-index) - var(--back-mid)) * 11px))
+      translateX(calc(-50% + (var(--fan-index) - var(--fan-mid)) * var(--table-fan-gap)))
       translateY(0)
-      rotate(calc((var(--back-index) - var(--back-mid)) * 9deg))
+      rotate(calc(var(--table-fan-rotate) + (var(--fan-index) - var(--fan-mid)) * 8deg))
       scale(1);
   }
 }
@@ -1469,7 +1508,7 @@ p {
   }
 
   .bid-dock {
-    bottom: 4px;
+    bottom: 10px;
   }
 
   .bid-dock > div {
@@ -1749,17 +1788,18 @@ p {
   }
 
   .hand-fan-area {
-    height: clamp(132px, 24svh, 190px);
+    height: clamp(150px, 26svh, 210px);
   }
 
   .hand-label {
-    bottom: clamp(96px, 16svh, 126px);
+    bottom: clamp(126px, 19svh, 158px);
     font-size: 0.68rem;
   }
 
   .hand-fan {
-    bottom: -66px;
+    bottom: 8px;
     height: clamp(152px, 27svh, 210px);
+    --hand-fan-gap: clamp(28px, 8.8vw, 38px);
   }
 
   .fan-card {
@@ -1837,7 +1877,7 @@ p {
 
   .bid-dock,
   .round-dock {
-    bottom: 14px;
+    bottom: 12px;
   }
 }
 
@@ -2015,8 +2055,9 @@ p {
   }
 
   .hand-fan {
-    bottom: -72px;
+    bottom: -8px;
     height: 160px;
+    --hand-fan-gap: clamp(26px, 5.2vw, 38px);
   }
 
   .fan-card {

@@ -18,6 +18,7 @@ The client in `app/page.tsx` supports room creation, joining by code, local-stor
 - Server-side validation for bidding order, last-bidder restriction, turn order, follow suit, trump enforcement, and trick winner calculation.
 - Round scoring with exact-bid bonus, missed-bid penalties, running totals, and streak tracking for hand sizes `2` through `7`.
 - Responsive table UI for desktop, mobile portrait, and short landscape screens, with labeled seat stats, phase context, card motion feedback, and a card-based create/join screen.
+- Four-seat card-table presentation with opponent card-back fans around the felt, a raised local hand fan, clearer score/bid docks, and mobile-first spacing tuned from full-game screenshots.
 - Windows launcher that installs dependencies when needed and prints LAN IP addresses.
 
 ## Known Limitations
@@ -35,3 +36,7 @@ The client in `app/page.tsx` supports room creation, joining by code, local-stor
 - Add stale-room cleanup for abandoned lobbies or games.
 - Add room management for disconnects, host transfer, and post-game restart.
 - Consider extracting larger UI sections from `app/page.tsx` once behavior stabilizes.
+
+## Recent QA
+
+- 2026-06-29: Automated four independent browser seats through a full 24-round game after the table UI pass. Result: 96 bids, 376 card plays, 23 round advances, no browser console/page errors, and no blocked card-click fallbacks.
