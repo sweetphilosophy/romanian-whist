@@ -9,6 +9,7 @@ import type { Card, PublicGameState, PublicPlayer } from "../src/shared/types";
 type Lang = "ro" | "en";
 type Ack = { ok: true; roomCode: string } | { ok: false; error: string };
 type TrickView = NonNullable<PublicGameState["lastCompletedTrick"]>;
+type TablePosition = "top" | "right" | "bottom" | "left";
 
 const text = {
   ro: {
@@ -437,6 +438,7 @@ function PlayTable({
   const winnerPosition = winner
     ? positions.find((item) => item.player.clientId === winner.clientId)?.position ?? "bottom"
     : "bottom";
+  const isScorePhase = state.phase === "roundEnd" || state.phase === "gameEnd";
   const tableCue =
     state.phase === "playing"
       ? currentPlayer?.clientId === state.meId
@@ -463,7 +465,7 @@ function PlayTable({
           : `${t.turn}: ${currentPlayer?.name ?? "-"}`;
 
   return (
-    <section className="table-stage">
+    <section className={clsx("table-stage", isScorePhase && "score-stage")}>
       {positions.map(({ player, position }) => (
         <SeatCard
           key={player.clientId}
@@ -476,7 +478,7 @@ function PlayTable({
         />
       ))}
 
-      <div className={clsx("felt", (state.phase === "roundEnd" || state.phase === "gameEnd") && "score-phase")}>
+      <div className={clsx("felt", isScorePhase && "score-phase")}>
         {positions.map(({ player, position }) =>
           player.clientId === state.meId ? null : (
             <TableHandFan
@@ -498,6 +500,7 @@ function PlayTable({
           {visiblePlays.map((play) => {
             const position = positions.find((item) => item.player.clientId === play.playerId)?.position ?? "bottom";
             const fly = flyFromPosition(position);
+            const collect = collectionVector(position, winnerPosition);
             return (
               <div
                 className={clsx(
@@ -510,7 +513,10 @@ function PlayTable({
                   {
                     "--fly-x": fly.x,
                     "--fly-y": fly.y,
-                    "--fly-rot": fly.rotate
+                    "--fly-rot": fly.rotate,
+                    "--collect-x": collect.x,
+                    "--collect-y": collect.y,
+                    "--collect-rot": collect.rotate
                   } as CSSProperties
                 }
               >
@@ -533,12 +539,13 @@ function PlayTable({
         ) : null}
 
         {state.phase === "bidding" ? <BidDock state={state} send={send} lang={lang} /> : null}
-        {state.phase === "roundEnd" || state.phase === "gameEnd" ? (
-          <RoundEndDock state={state} isHost={isHost} send={send} lang={lang} />
-        ) : null}
       </div>
 
-      <HandFan state={state} send={send} lang={lang} />
+      {isScorePhase ? (
+        <RoundEndDock state={state} isHost={isHost} send={send} lang={lang} />
+      ) : (
+        <HandFan state={state} send={send} lang={lang} />
+      )}
     </section>
   );
 }
@@ -715,15 +722,24 @@ function RoundEndDock({
   const latest = state.history.at(-1);
   const celebratoryScores = latest?.scores.filter((score) => score.delta > 0 || score.streakBonus !== 0).slice(0, 4) ?? [];
   return (
-    <div className={clsx("round-dock", celebratoryScores.length > 0 && "score-celebrate")}>
-      <strong>{state.phase === "gameEnd" ? t.gameOver : t.scoreboard}</strong>
+    <div className={clsx("round-dock", state.phase === "gameEnd" && "game-over-dock", celebratoryScores.length > 0 && "score-celebrate")}>
+      <header className="round-dock-head">
+        <span>{latest ? `${t.round} ${latest.round}` : t.scoreboard}</span>
+        <strong>{state.phase === "gameEnd" ? t.gameOver : t.scoreboard}</strong>
+      </header>
       {latest ? (
-        <div className="round-summary">
+        <div className="scoreline-grid">
           {latest.scores.map((score) => (
-            <span key={score.clientId} className={clsx(score.delta >= 0 ? "positive" : "negative")}>
-              {score.name}: {score.delta > 0 ? "+" : ""}
-              {score.delta}
-            </span>
+            <div key={score.clientId} className={clsx("scoreline", score.delta >= 0 ? "positive-scoreline" : "negative-scoreline")}>
+              <span>{score.name}</span>
+              <strong>
+                {score.delta > 0 ? "+" : ""}
+                {score.delta}
+              </strong>
+              <small>
+                {t.total} {score.total}
+              </small>
+            </div>
           ))}
         </div>
       ) : null}
@@ -1018,7 +1034,7 @@ function soloSeatLabel() {
   return seat.trim().slice(0, 12);
 }
 
-function flyFromPosition(position: "top" | "right" | "bottom" | "left") {
+function flyFromPosition(position: TablePosition) {
   switch (position) {
     case "top":
       return { x: "0px", y: "-112px", rotate: "8deg" };
@@ -1029,6 +1045,32 @@ function flyFromPosition(position: "top" | "right" | "bottom" | "left") {
     case "bottom":
     default:
       return { x: "0px", y: "150px", rotate: "-8deg" };
+  }
+}
+
+function collectionVector(from: TablePosition, to: TablePosition) {
+  const start = tableMotionPoint(from, "card");
+  const end = tableMotionPoint(to, "winner");
+  const rotate = to === "left" ? "-16deg" : to === "right" ? "16deg" : to === "top" ? "8deg" : "-8deg";
+  return {
+    x: `${end.x - start.x}px`,
+    y: `${end.y - start.y}px`,
+    rotate
+  };
+}
+
+function tableMotionPoint(position: TablePosition, kind: "card" | "winner") {
+  const distance = kind === "winner" ? 178 : 92;
+  switch (position) {
+    case "top":
+      return { x: 0, y: -distance };
+    case "right":
+      return { x: distance, y: 0 };
+    case "left":
+      return { x: -distance, y: 0 };
+    case "bottom":
+    default:
+      return { x: 0, y: distance };
   }
 }
 

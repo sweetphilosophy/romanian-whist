@@ -19,6 +19,7 @@ The client in `app/page.tsx` supports room creation, joining by code, local-stor
 - Round scoring with exact-bid bonus, missed-bid penalties, running totals, and streak tracking for hand sizes `2` through `7`.
 - Responsive table UI for desktop, mobile portrait, and short landscape screens, with labeled seat stats, phase context, card motion feedback, and a card-based create/join screen.
 - Four-seat card-table presentation with opponent card-back fans around the felt, a raised local hand fan, clearer score/bid docks, and mobile-first spacing tuned from full-game screenshots.
+- Trick collection animation now sends played cards toward the player who won the trick, and round/game score updates render in the empty hand area with a compact per-player score panel.
 - Windows launcher that installs dependencies when needed and prints LAN IP addresses.
 
 ## Known Limitations
@@ -40,3 +41,4 @@ The client in `app/page.tsx` supports room creation, joining by code, local-stor
 ## Recent QA
 
 - 2026-06-29: Automated four independent browser seats through a full 24-round game after the table UI pass. Result: 96 bids, 376 card plays, 23 round advances, no browser console/page errors, and no blocked card-click fallbacks.
+- 2026-06-29: Re-ran the four-seat full-game flow after score/collection animation changes and captured a targeted trick animation screenshot. Result: full game completed, no browser console/page errors, and trick cards visibly collect toward the winning seat.
